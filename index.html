@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#0f4c5c">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Entregas">
+  <title>Control de Entregas</title>
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icons/icon-192.png">
+  <link rel="apple-touch-icon" href="icons/icon-192.png">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="top">
+    <div class="top-title">
+      <strong>Control de entregas</strong>
+      <span id="proj-name" class="muted"></span>
+    </div>
+    <div class="row">
+      <span id="cola" class="badge" hidden></span>
+      <span id="conn" class="conn" title="Conexión"></span>
+    </div>
+  </header>
+  <div id="demo-banner" class="banner" hidden>Modo demo: los datos se guardan solo en este dispositivo. Configura Supabase en <code>config.js</code> para usarla con varios usuarios.</div>
+
+  <main id="view"></main>
+
+  <div id="valebar" class="valebar" hidden></div>
+  <nav class="tabs" id="tabs" hidden>
+    <button data-tab="entregar" id="tab-entregar" class="on"><span class="ti">＋</span>Entregar</button>
+    <button data-tab="resumen"><span class="ti">▤</span>Resumen</button>
+    <button data-tab="vales"><span class="ti">☰</span>Vales</button>
+    <button data-tab="mas"><span class="ti">⋯</span>Más</button>
+  </nav>
+  <div id="print-area"></div>
+
+  <div id="sheet-bg" class="sheet-bg" hidden></div>
+  <section id="sheet" class="sheet" hidden></section>
+  <div id="toast" class="toast" hidden></div>
+
+  <script src="config.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
+  <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
