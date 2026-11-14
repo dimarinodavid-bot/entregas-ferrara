@@ -4,7 +4,11 @@
 
 const CFG = window.APP_CONFIG || {};
 const DEMO = !CFG.SUPABASE_URL || !CFG.SUPABASE_ANON_KEY;
-const VERSION = '2.0';
+const VERSION = '3.0';
+// Enlace del correo de recuperación de contraseña (se lee antes de que Supabase limpie la URL)
+const URL_HASH = new URLSearchParams(location.hash.slice(1));
+const RECOVERY = URL_HASH.get('type') === 'recovery';
+const AUTH_ERR = URL_HASH.get('error_code') || URL_HASH.get('error');
 
 /* ------------------------------------------------------------------ */
 /* Utilidades                                                          */
@@ -70,9 +74,13 @@ function supabaseBackend() {
     }
   }
   return {
+    _sb: sb, // lo usa equipos.js
     async user() { const { data } = await sb.auth.getSession(); return data.session?.user || null; },
     async signIn(email, password) { return ok(await sb.auth.signInWithPassword({ email, password })).user; },
     async signOut() { await sb.auth.signOut(); },
+    async recuperar(email) { ok(await sb.auth.resetPasswordForEmail(email, { redirectTo: location.origin + location.pathname })); },
+    async cambiarClave(password) { ok(await sb.auth.updateUser({ password })); },
+    onRecovery(cb) { sb.auth.onAuthStateChange((ev) => { if (ev === 'PASSWORD_RECOVERY') cb(); }); },
     async perfil() { return ok(await sb.rpc('mi_perfil')); },
     async subcontratas() { return ok(await sb.from('subcontratas').select('*').eq('activo', true).order('orden')); },
     async materiales() { return all(() => sb.from('materiales').select('*').order('codigo')); },
@@ -103,7 +111,7 @@ function supabaseBackend() {
     },
     subscribe(onChange, onStatus) {
       let ch = sb.channel('cambios');
-      for (const t of ['entregas', 'vales', 'materiales', 'reparto']) ch = ch.on('postgres_changes', { event: '*', schema: 'public', table: t }, () => onChange(t));
+      for (const t of ['entregas', 'vales', 'materiales', 'reparto', 'equipos', 'prestamos', 'incidencias']) ch = ch.on('postgres_changes', { event: '*', schema: 'public', table: t }, () => onChange(t));
       ch.subscribe((status) => onStatus(status === 'SUBSCRIBED' ? 'ok' : status === 'CHANNEL_ERROR' || status === 'CLOSED' ? 'off' : 'mid'));
     },
   };
@@ -132,6 +140,9 @@ function demoBackend() {
     async user() { return { email: me().email }; },
     async signIn() { return { email: me().email }; },
     async signOut() {},
+    async recuperar() {},
+    async cambiarClave() {},
+    onRecovery() {},
     async perfil() { return me(); },
     async subcontratas() { red(); return load().subs; },
     async materiales() { return load().mats; },
@@ -352,6 +363,10 @@ function scheduleRefresh(what) {
   clearTimeout(refreshTimer);
   refreshTimer = setTimeout(async () => {
     try {
+      if (['equipos', 'prestamos', 'incidencias'].includes(what)) {
+        if (S.tab === 'equipos' || sheet?.kind === 'equipo') { await loadEquipos(); rerender(); }
+        return;
+      }
       if (what === 'materiales') await loadMats();
       if (what === 'reparto' || what === 'materiales') await loadReparto();
       await loadResumen();
@@ -430,9 +445,11 @@ function rerender() {
   if (S.tab === 'entregar') renderEntregarResults();
   else if (S.tab === 'resumen') renderResumenList();
   else if (S.tab === 'vales') renderValesList();
+  else if (S.tab === 'equipos') renderEquiposList();
   else if (S.tab === 'mas') renderMas();
   renderValeBar(); renderColaBadge();
-  if (sheet && sheet.kind !== 'print') renderSheet();
+  // No repintar un formulario de equipo a medias (fotos, textos) ni mientras se envía
+  if (sheet && !sheet.form && !sheet.busy) renderSheet();
 }
 
 function subChips(selected, { all = false, attr = 'data-sub', disabled = false } = {}) {
@@ -706,13 +723,16 @@ function renderMas() {
       ${S.me?.rol !== 'admin' ? `<button class="btn ghost block" id="btn-demo-admin">Volver a rol Administrador</button>` : ''}
       <label class="toggle"><input type="checkbox" id="demo-off" ${LS.get('demo_offline', false) ? 'checked' : ''}> Simular móvil sin cobertura</label>
       <button class="btn bad block" id="btn-reset" style="margin-top:10px">Borrar datos de la demo</button>`
-      : `<h2>Sesión</h2><button class="btn ghost block" id="btn-out">Cerrar sesión</button>`}
+      : `<h2>Sesión</h2>
+      <button class="btn ghost block" id="btn-clave">Cambiar contraseña</button>
+      <button class="btn ghost block" id="btn-out" style="margin-top:8px">Cerrar sesión</button>`}
     <p class="muted small" style="text-align:center;margin-top:24px">v${VERSION}</p>`;
 
   $('#btn-xls').onclick = exportExcel;
   $('#my-name').onchange = (e) => LS.set('nombre', e.target.value.trim());
   if ($('#btn-inst')) $('#btn-inst').onclick = async () => { installEvt.prompt(); installEvt = null; };
   if ($('#btn-out')) $('#btn-out').onclick = async () => { await API.signOut(); LS.set('cache', null); location.reload(); };
+  if ($('#btn-clave')) $('#btn-clave').onclick = () => renderNuevaClave();
   if ($('#btn-reset')) $('#btn-reset').onclick = () => {
     if (confirm('¿Borrar todos los datos de la demo en este dispositivo?')) { ['demo_db', 'cola', 'vale', 'cache', 'demo_rol', 'demo_offline'].forEach((k) => localStorage.removeItem('ent_' + k)); location.reload(); }
   };
@@ -804,6 +824,7 @@ function renderSheet() {
   if (sheet.kind === 'item') renderItemSheet();
   else if (sheet.kind === 'draft') renderDraftSheet();
   else if (sheet.kind === 'vale') renderValeSheet();
+  else if (sheet.kind === 'equipo') renderEquipoSheet();
   if (focused && $('#' + focused, $('#sheet'))) $('#' + focused, $('#sheet')).focus();
 }
 const sheetHead = (title, sub) => `<div class="grab"></div><button class="close" data-close aria-label="Cerrar">×</button>
@@ -1253,6 +1274,8 @@ async function exportExcel() {
       XLSX.utils.book_append_sheet(wb, sheetFrom(rp, [18, 14, ...subs.map(() => 15), 11]), 'Reparto trackers');
     }
 
+    await hojasEquipos(wb);
+
     const now = new Date();
     XLSX.utils.book_append_sheet(wb, sheetFrom([
       ['Proyecto', S.ajustes.proyecto || CFG.PROYECTO || ''],
@@ -1286,8 +1309,10 @@ function renderLogin(err = '') {
       <div class="field"><label>Contraseña</label><input type="password" id="l-pass" autocomplete="current-password" required></div>
       ${err ? `<div class="alert bad">${esc(err)}</div>` : ''}
       <button class="btn block" style="margin-top:16px">Entrar</button>
+      <button type="button" class="btn ghost block" id="l-olvido" style="margin-top:8px">He olvidado mi contraseña</button>
       <p class="muted small">Las cuentas las crea el administrador del proyecto.</p>
     </form>`;
+  $('#l-olvido').onclick = () => renderOlvido();
   $('#login').onsubmit = async (e) => {
     e.preventDefault();
     const email = $('#l-email').value.trim();
@@ -1299,11 +1324,75 @@ function renderLogin(err = '') {
   };
 }
 
+// Pide a Supabase que envíe el correo con el enlace para crear una contraseña nueva
+function renderOlvido(err = '', enviado = false) {
+  $('#tabs').hidden = true;
+  view().innerHTML = `
+    <form class="login" id="olvido">
+      <h2>Recuperar contraseña</h2>
+      ${enviado
+        ? `<div class="alert" style="background:var(--brand-soft);color:var(--brand)">Si el correo está dado de alta, recibirás un enlace para crear una contraseña nueva.
+             Ábrelo en este móvil. Revisa también la carpeta de spam.</div>`
+        : `<p class="muted small">Escribe tu correo y te enviaremos un enlace para crear una contraseña nueva.</p>
+           <div class="field"><label>Correo</label><input type="email" id="o-email" autocomplete="username" required value="${esc(LS.get('last_email', ''))}"></div>
+           ${err ? `<div class="alert bad">${esc(err)}</div>` : ''}
+           <button class="btn block" style="margin-top:16px">Enviar enlace</button>`}
+      <button type="button" class="btn ghost block" id="o-volver" style="margin-top:8px">Volver a iniciar sesión</button>
+    </form>`;
+  $('#o-volver').onclick = () => renderLogin();
+  if (enviado) return;
+  $('#olvido').onsubmit = async (e) => {
+    e.preventDefault();
+    const email = $('#o-email').value.trim();
+    const btn = $('#olvido .btn'); btn.disabled = true; btn.textContent = 'Enviando…';
+    try {
+      await API.recuperar(email);
+      LS.set('last_email', email);
+      renderOlvido('', true);
+    } catch (er) {
+      renderOlvido(/rate limit|too many|seconds/i.test(er.message)
+        ? 'Se han pedido demasiados correos. Espera unos minutos y vuelve a intentarlo.'
+        : isNetErr(er) ? 'Sin conexión. Inténtalo cuando tengas cobertura.' : er.message);
+    }
+  };
+}
+
+// Contraseña nueva: al abrir el enlace del correo o desde Más → Cambiar contraseña
+function renderNuevaClave({ desdeEnlace = false, err = '' } = {}) {
+  $('#tabs').hidden = true;
+  closeSheet();
+  view().innerHTML = `
+    <form class="login" id="nclave">
+      <h2>${desdeEnlace ? 'Crea tu contraseña nueva' : 'Cambiar contraseña'}</h2>
+      <div class="field"><label>Contraseña nueva (mínimo 8 caracteres)</label><input type="password" id="n-p1" autocomplete="new-password" minlength="8" required></div>
+      <div class="field"><label>Repite la contraseña</label><input type="password" id="n-p2" autocomplete="new-password" minlength="8" required></div>
+      ${err ? `<div class="alert bad">${esc(err)}</div>` : ''}
+      <button class="btn block" style="margin-top:16px">Guardar contraseña</button>
+      ${desdeEnlace ? '' : '<button type="button" class="btn ghost block" id="n-cancel" style="margin-top:8px">Cancelar</button>'}
+    </form>`;
+  if ($('#n-cancel')) $('#n-cancel').onclick = () => { $('#tabs').hidden = false; go('mas'); };
+  $('#nclave').onsubmit = async (e) => {
+    e.preventDefault();
+    const p1 = $('#n-p1').value, p2 = $('#n-p2').value;
+    if (p1.length < 8) return renderNuevaClave({ desdeEnlace, err: 'La contraseña debe tener al menos 8 caracteres.' });
+    if (p1 !== p2) return renderNuevaClave({ desdeEnlace, err: 'Las contraseñas no coinciden.' });
+    try {
+      await API.cambiarClave(p1);
+      history.replaceState(null, '', location.pathname);
+      toast('Contraseña guardada');
+      S.user = await API.user();
+      if (S.user) await start(); else renderLogin();
+    } catch (er) {
+      renderNuevaClave({ desdeEnlace, err: /different from the old/i.test(er.message) ? 'La contraseña nueva debe ser distinta de la anterior.' : er.message });
+    }
+  };
+}
+
 function go(tab) {
   S.tab = tab;
   $$('#tabs button').forEach((b) => b.classList.toggle('on', b.dataset.tab === tab));
   window.scrollTo(0, 0);
-  ({ entregar: renderEntregar, resumen: renderResumen, vales: renderVales, mas: renderMas })[tab]();
+  ({ entregar: renderEntregar, resumen: renderResumen, vales: renderVales, equipos: renderEquipos, mas: renderMas })[tab]();
   renderValeBar();
 }
 
@@ -1327,7 +1416,7 @@ async function start() {
   $('#proj-name').textContent = S.ajustes.proyecto || CFG.PROYECTO || '';
   $('#tabs').hidden = false;
   $('#tab-entregar').hidden = !can.registrar();
-  $('#tabs').style.gridTemplateColumns = `repeat(${can.registrar() ? 4 : 3}, 1fr)`;
+  $('#tabs').style.gridTemplateColumns = `repeat(${$$('#tabs button').filter((b) => !b.hidden).length}, 1fr)`;
   renderColaBadge();
   if (!started) {
     started = true;
@@ -1359,8 +1448,14 @@ document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && sheet) c
   if (DEMO) $('#demo-banner').hidden = false;
   setConn('mid');
   if ('serviceWorker' in navigator && location.protocol !== 'file:') navigator.serviceWorker.register('sw.js').catch(() => {});
+  API.onRecovery(() => renderNuevaClave({ desdeEnlace: true }));
   try {
     S.user = await API.user();
+    if (AUTH_ERR && !DEMO) {
+      history.replaceState(null, '', location.pathname);
+      return renderOlvido('El enlace ha caducado o ya se usó. Pide uno nuevo.');
+    }
+    if (RECOVERY && S.user) return renderNuevaClave({ desdeEnlace: true });
     // Sin cobertura y con la sesión caducada: seguir con el último perfil guardado
     if (!S.user && !navigator.onLine && LS.get('cache', null)?.me) S.user = { email: LS.get('cache').me.email };
     if (S.user) await start(); else renderLogin();

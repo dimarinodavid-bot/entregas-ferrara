@@ -227,6 +227,25 @@ body.has-vale .toast { bottom: calc(var(--tabs-h) + var(--safe-b) + 76px); }
 .rep-grid input { width: 100%; padding: 9px 8px; text-align: right; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); font-size: 16px; }
 .card.rep .tot { font-weight: 600; white-space: nowrap; }
 
+/* v3: equipos y fotos */
+.tabs button { font-size: 11px; }
+.eq-ico { font-size: 20px; line-height: 1; }
+.sheet h3.eq-title { font-family: inherit; font-size: 18px; padding-right: 28px; }
+.chips-scroll .chips { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; margin: 0 -16px; padding: 0 16px; }
+.chips-scroll .chips::-webkit-scrollbar { display: none; }
+.eq-acciones { display: flex; flex-direction: column; gap: 8px; margin-top: 14px; }
+.pill:not(.p):not(.s):not(.x):not(.ok):not(.w):not(.d) { background: var(--line); color: var(--muted); }
+.fotos { display: grid; grid-template-columns: repeat(auto-fill, minmax(76px, 1fr)); gap: 6px; margin-top: 6px; }
+.ft { position: relative; aspect-ratio: 1; border-radius: 8px; overflow: hidden; background: var(--line); }
+.ft img { width: 100%; height: 100%; object-fit: cover; display: block; cursor: zoom-in; }
+.ft-del { position: absolute; top: 3px; right: 3px; width: 24px; height: 24px; border: 0; border-radius: 50%; background: rgba(0,0,0,.6); color: #fff; font-size: 16px; line-height: 1; }
+.ft.add { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; cursor: pointer;
+  background: var(--brand-soft); color: var(--brand); border: 1px dashed var(--brand-2); font-size: 12px; font-weight: 600; }
+.ft.add b { font-size: 24px; }
+.visor { position: fixed; inset: 0; z-index: 60; background: rgba(0,0,0,.92); display: flex; align-items: center; justify-content: center; padding: 12px; }
+.visor img { max-width: 100%; max-height: 100%; object-fit: contain; }
+.seg button small { font-weight: 500; font-size: 10px; }
+
 /* Vale imprimible */
 #print-area { display: none; }
 @media print {
@@ -246,3 +265,6 @@ body.has-vale .toast { bottom: calc(var(--tabs-h) + var(--safe-b) + 76px); }
 .pv-lines th { background: #eee; }
 .pv-lines td.n { text-align: right; font-weight: 700; white-space: nowrap; }
 .pv-obs { font-size: 9pt; font-style: italic; }
+.pv h3 { font-size: 12pt; margin: 14px 0 6px; }
+.pv-fotos { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin-bottom: 10px; }
+.pv-fotos img { width: 100%; aspect-ratio: 4 / 3; object-fit: cover; border: 1px solid #999; break-inside: avoid; }

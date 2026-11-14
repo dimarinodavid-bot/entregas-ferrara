@@ -1,8 +1,8 @@
 // Service worker: deja la app abrible sin conexión (los datos necesitan red).
 // Sube el número de versión al publicar cambios para forzar la actualización.
-const CACHE = 'entregas-v2';
+const CACHE = 'entregas-v3';
 const SHELL = [
-  './', './index.html', './app.js', './styles.css', './config.js', './manifest.webmanifest',
+  './', './index.html', './app.js', './equipos.js', './styles.css', './config.js', './manifest.webmanifest',
   './icons/icon-192.png', './icons/icon-512.png',
   'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js',
   'https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js',
